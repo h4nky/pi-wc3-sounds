@@ -2,7 +2,13 @@
 
 Warcraft III voice lines for [pi](https://github.com/badlogic/pi-mono) lifecycle events.
 
-Based on and Sounds sourced from [peon-ping](https://github.com/tonyyont/peon-ping) by [@tonyyont](https://github.com/tonyyont).
+Sounds sourced from [peon-ping](https://github.com/tonyyont/peon-ping) by [@tonyyont](https://github.com/tonyyont).
+
+## Install
+
+```bash
+pi install https://github.com/h4nky/pi-wc3-sounds
+```
 
 ## Sound Packs by Model
 
@@ -32,10 +38,10 @@ Pack switches automatically when you change models.
 | `/wc3-volume [0.0–1.0]` | Set volume (e.g. `/wc3-volume 0.3`) |
 | `Ctrl+Shift+M` | Quick mute toggle |
 
-## Install
-
-Copy the `wc3-sounds` folder to `~/.pi/agent/extensions/` and run `/reload` in pi.
-
 ## Requirements
 
 macOS only (uses `afplay`). Silently no-ops on other platforms.
+
+## License
+
+MIT
