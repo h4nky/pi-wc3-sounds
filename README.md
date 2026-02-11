@@ -2,7 +2,7 @@
 
 Warcraft III voice lines for [pi](https://github.com/badlogic/pi-mono) lifecycle events.
 
-Sounds sourced from [peon-ping](https://github.com/tonyyont/peon-ping) by [@tonyyont](https://github.com/tonyyont).
+Based on and Sounds sourced from [peon-ping](https://github.com/tonyyont/peon-ping) by [@tonyyont](https://github.com/tonyyont).
 
 ## Sound Packs by Model
 
