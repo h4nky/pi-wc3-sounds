@@ -1,15 +1,19 @@
 /**
  * WC3 Sounds — Pi Extension
  *
- * Plays Warcraft III / StarCraft / Red Alert 2 voice lines on pi lifecycle events.
+ * Plays Warcraft III voice lines on pi lifecycle events.
  * Sound packs sourced from https://github.com/tonyyont/peon-ping
  *
+ * Pack selection by model:
+ *   Claude models → Orc Peon ("Work, work.", "Me not that kind of orc!")
+ *   Codex models  → Human Peasant ("Yes, milord?", "Right-o.")
+ *   Other models  → Orc Peon (default)
+ *
  * Events:
- *   session_start  → greeting   ("Ready to work?", "Yes?")
- *   agent_start    → acknowledge ("Work, work.", "I can do that.")
- *   agent_end      → complete   ("Something need doing?", "Ready to work?")
- *   tool error     → error      ("Me not that kind of orc!")
- *   annoyed        → annoyed    ("Me busy, leave me alone!" — 3+ prompts in 10s)
+ *   session_start  → greeting
+ *   agent_start    → acknowledge (or annoyed on rapid prompts)
+ *   agent_end      → complete
+ *   tool error     → error
  *
  * Commands:
  *   /wc3-mute      — Toggle mute
@@ -45,12 +49,38 @@ const IS_MACOS = process.platform === "darwin";
 
 let muted = false;
 let volume = 0.5;
-let activePack = "peon";
+let currentPack = "peon";
 let lastPlayed: Record<string, string> = {};
 let promptTimestamps: number[] = [];
 
 const ANNOYED_THRESHOLD = 3;
 const ANNOYED_WINDOW_MS = 10_000;
+
+// ── Pack selection by model ────────────────────────────────────────────────
+
+function packForModel(model: { provider?: string; id?: string; name?: string } | undefined): string {
+  if (!model) return "peon";
+
+  const id = (model.id ?? "").toLowerCase();
+  const provider = (model.provider ?? "").toLowerCase();
+
+  // Codex models → Human Peasant
+  if (id.includes("codex") || provider.includes("codex")) return "peasant";
+
+  // Claude models → Orc Peon
+  if (id.includes("claude") || provider.includes("anthropic")) return "peon";
+
+  // Default → Orc Peon
+  return "peon";
+}
+
+function syncPackToModel(ctx: { model?: any }): void {
+  const newPack = packForModel(ctx.model);
+  if (newPack !== currentPack) {
+    currentPack = newPack;
+    lastPlayed = {};
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -64,7 +94,7 @@ function loadManifest(packName: string): PackManifest | null {
 }
 
 function pickSound(category: Category): { file: string; line: string } | null {
-  const manifest = loadManifest(activePack);
+  const manifest = loadManifest(currentPack);
   if (!manifest) return null;
 
   const sounds = manifest.categories[category]?.sounds;
@@ -86,7 +116,7 @@ function playSound(category: Category): string | null {
   const sound = pickSound(category);
   if (!sound) return null;
 
-  const soundPath = path.join(PACKS_DIR, activePack, "sounds", sound.file);
+  const soundPath = path.join(PACKS_DIR, currentPack, "sounds", sound.file);
   if (!fs.existsSync(soundPath)) return null;
 
   execFile("afplay", ["-v", String(volume), soundPath], (err) => {
@@ -105,20 +135,40 @@ function checkAnnoyed(): boolean {
   return promptTimestamps.length >= ANNOYED_THRESHOLD;
 }
 
+function packEmoji(): string {
+  return currentPack === "peasant" ? "🏰" : "🪓";
+}
+
 // ── Extension ──────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+  // ── Model change → switch pack ─────────────────────────────────────────
+  pi.on("model_select", async (event, ctx) => {
+    const newPack = packForModel(event.model);
+    if (newPack !== currentPack) {
+      currentPack = newPack;
+      lastPlayed = {};
+      const manifest = loadManifest(currentPack);
+      const name = manifest?.display_name ?? currentPack;
+      ctx.ui.setStatus("wc3", `${packEmoji()} Switched to ${name}`);
+      setTimeout(() => ctx.ui.setStatus("wc3", undefined), 3000);
+    }
+  });
+
   // ── Session start → greeting ───────────────────────────────────────────
   pi.on("session_start", async (_event, ctx) => {
+    syncPackToModel(ctx);
     const line = playSound("greeting");
     if (line) {
-      ctx.ui.setStatus("wc3", `🔊 "${line}"`);
+      ctx.ui.setStatus("wc3", `${packEmoji()} "${line}"`);
       setTimeout(() => ctx.ui.setStatus("wc3", undefined), 3000);
     }
   });
 
   // ── Agent start → acknowledge ──────────────────────────────────────────
   pi.on("agent_start", async (_event, ctx) => {
+    syncPackToModel(ctx);
+
     // Check annoyed state (rapid prompts)
     if (checkAnnoyed()) {
       const line = playSound("annoyed");
