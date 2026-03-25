@@ -5,9 +5,10 @@
  * Sound packs sourced from https://github.com/tonyyont/peon-ping
  *
  * Pack selection by model:
- *   Claude models → Orc Peon ("Work, work.", "Me not that kind of orc!")
- *   Codex models  → Human Peasant ("Yes, milord?", "Right-o.")
- *   Other models  → Orc Peon (default)
+ *   Claude models             → Orc Peon ("Work, work.", "Me not that kind of orc!")
+ *   Codex models              → Human Peasant ("Yes, milord?", "Right-o.")
+ *   OpenAI non-Codex models   → Claptrap (Borderlands)
+ *   Other models              → Orc Peon (default)
  *
  * Events:
  *   session_start  → greeting
@@ -74,6 +75,17 @@ function packForModel(model: { provider?: string; id?: string; name?: string } |
 
   // Codex models → Human Peasant
   if (id.includes("codex") || provider.includes("codex")) return "peasant";
+
+  // OpenAI non-Codex models → Claptrap
+  if (
+    provider.includes("openai") ||
+    id.startsWith("gpt") ||
+    id.startsWith("o1") ||
+    id.startsWith("o3") ||
+    id.startsWith("o4")
+  ) {
+    return "claptrap";
+  }
 
   // Claude models → Orc Peon
   if (id.includes("claude") || provider.includes("anthropic")) return "peon";
@@ -171,7 +183,9 @@ function checkAnnoyed(): boolean {
 }
 
 function packEmoji(): string {
-  return currentPack === "peasant" ? "🏰" : "🪓";
+  if (currentPack === "peasant") return "🏰";
+  if (currentPack === "claptrap") return "🤖";
+  return "🪓";
 }
 
 // ── Extension ──────────────────────────────────────────────────────────────
