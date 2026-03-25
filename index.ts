@@ -5,9 +5,10 @@
  * Sound packs sourced from https://github.com/tonyyont/peon-ping
  *
  * Pack selection by model:
- *   Claude models → Orc Peon ("Work, work.", "Me not that kind of orc!")
- *   Codex models  → Human Peasant ("Yes, milord?", "Right-o.")
- *   Other models  → Orc Peon (default)
+ *   Claude models             → Orc Peon ("Work, work.", "Me not that kind of orc!")
+ *   Codex models              → Human Peasant ("Yes, milord?", "Right-o.")
+ *   OpenAI non-Codex models   → Claptrap (Borderlands)
+ *   Other models              → Orc Peon (default)
  *
  * Events:
  *   session_start  → greeting
@@ -19,13 +20,17 @@
  *   /wc3-mute      — Toggle mute
  *   /wc3-volume    — Set volume (0.0–1.0)
  *
- * macOS only (uses afplay). Falls back to no-op on other platforms.
+ * Supported playback:
+ *   macOS → afplay
+ *   Linux → pw-play (PipeWire)
+ *   Other platforms → no-op
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -41,24 +46,85 @@ interface PackManifest {
 }
 
 type Category = "greeting" | "acknowledge" | "complete" | "error" | "permission" | "annoyed";
+type PackName = "peon" | "peasant" | "claptrap";
+type PackMode = "auto" | PackName;
+
+interface PlayerConfig {
+  command: string;
+  argsForVolume: (volume: number) => string[];
+}
 
 // ── State ──────────────────────────────────────────────────────────────────
 
 const PACKS_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), "packs");
-const IS_MACOS = process.platform === "darwin";
+const PLAYER = resolvePlayer();
+
+interface Wc3Settings {
+  pack?: PackMode;
+  muted?: boolean;
+  volume?: number;
+}
 
 let muted = false;
 let volume = 0.5;
-let currentPack = "peon";
+let packMode: PackMode = "auto";
+let currentPack: PackName = "peon";
 let lastPlayed: Record<string, string> = {};
 let promptTimestamps: number[] = [];
 
 const ANNOYED_THRESHOLD = 3;
 const ANNOYED_WINDOW_MS = 10_000;
 
+// ── Settings ───────────────────────────────────────────────────────────────
+
+function isPackName(value: unknown): value is PackName {
+  return value === "peon" || value === "peasant" || value === "claptrap";
+}
+
+function readSettingsFile(filePath: string): Record<string, any> {
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function loadWc3Settings(cwd: string): Wc3Settings {
+  const globalSettingsPath = path.join(os.homedir(), ".pi", "agent", "settings.json");
+  const projectSettingsPath = path.join(cwd, ".pi", "settings.json");
+
+  const globalSettings = readSettingsFile(globalSettingsPath);
+  const projectSettings = readSettingsFile(projectSettingsPath);
+
+  const merged = {
+    ...(globalSettings?.wc3Sounds ?? {}),
+    ...(projectSettings?.wc3Sounds ?? {}),
+  } as Wc3Settings;
+
+  return merged;
+}
+
+function applyWc3Settings(cwd: string): void {
+  const settings = loadWc3Settings(cwd);
+
+  if (settings.pack === "auto" || isPackName(settings.pack)) {
+    packMode = settings.pack;
+  }
+
+  if (typeof settings.muted === "boolean") {
+    muted = settings.muted;
+  }
+
+  if (typeof settings.volume === "number" && settings.volume >= 0 && settings.volume <= 1) {
+    volume = settings.volume;
+  }
+}
+
 // ── Pack selection by model ────────────────────────────────────────────────
 
-function packForModel(model: { provider?: string; id?: string; name?: string } | undefined): string {
+function packForModel(model: { provider?: string; id?: string; name?: string } | undefined): PackName {
   if (!model) return "peon";
 
   const id = (model.id ?? "").toLowerCase();
@@ -67,6 +133,17 @@ function packForModel(model: { provider?: string; id?: string; name?: string } |
   // Codex models → Human Peasant
   if (id.includes("codex") || provider.includes("codex")) return "peasant";
 
+  // OpenAI non-Codex models → Claptrap
+  if (
+    provider.includes("openai") ||
+    id.startsWith("gpt") ||
+    id.startsWith("o1") ||
+    id.startsWith("o3") ||
+    id.startsWith("o4")
+  ) {
+    return "claptrap";
+  }
+
   // Claude models → Orc Peon
   if (id.includes("claude") || provider.includes("anthropic")) return "peon";
 
@@ -74,8 +151,13 @@ function packForModel(model: { provider?: string; id?: string; name?: string } |
   return "peon";
 }
 
+function desiredPack(model: { provider?: string; id?: string; name?: string } | undefined): PackName {
+  if (packMode !== "auto") return packMode;
+  return packForModel(model);
+}
+
 function syncPackToModel(ctx: { model?: any }): void {
-  const newPack = packForModel(ctx.model);
+  const newPack = desiredPack(ctx.model);
   if (newPack !== currentPack) {
     currentPack = newPack;
     lastPlayed = {};
@@ -83,6 +165,33 @@ function syncPackToModel(ctx: { model?: any }): void {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+function hasCommand(command: string): boolean {
+  try {
+    execFileSync("which", [command], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolvePlayer(): PlayerConfig | null {
+  if (process.platform === "darwin") {
+    return {
+      command: "afplay",
+      argsForVolume: (v) => ["-v", String(v)],
+    };
+  }
+
+  if (process.platform === "linux" && hasCommand("pw-play")) {
+    return {
+      command: "pw-play",
+      argsForVolume: (v) => ["--volume", String(v)],
+    };
+  }
+
+  return null;
+}
 
 function loadManifest(packName: string): PackManifest | null {
   const manifestPath = path.join(PACKS_DIR, packName, "manifest.json");
@@ -111,7 +220,7 @@ function pickSound(category: Category): { file: string; line: string } | null {
 }
 
 function playSound(category: Category): string | null {
-  if (muted || !IS_MACOS) return null;
+  if (muted || !PLAYER) return null;
 
   const sound = pickSound(category);
   if (!sound) return null;
@@ -119,7 +228,7 @@ function playSound(category: Category): string | null {
   const soundPath = path.join(PACKS_DIR, currentPack, "sounds", sound.file);
   if (!fs.existsSync(soundPath)) return null;
 
-  execFile("afplay", ["-v", String(volume), soundPath], (err) => {
+  execFile(PLAYER.command, [...PLAYER.argsForVolume(volume), soundPath], (err) => {
     if (err && (err as any).code !== "ERR_CHILD_PROCESS_STDIO_FINAL_ERROR") {
       // Silently ignore playback errors
     }
@@ -136,7 +245,9 @@ function checkAnnoyed(): boolean {
 }
 
 function packEmoji(): string {
-  return currentPack === "peasant" ? "🏰" : "🪓";
+  if (currentPack === "peasant") return "🏰";
+  if (currentPack === "claptrap") return "🤖";
+  return "🪓";
 }
 
 // ── Extension ──────────────────────────────────────────────────────────────
@@ -144,7 +255,7 @@ function packEmoji(): string {
 export default function (pi: ExtensionAPI) {
   // ── Model change → switch pack ─────────────────────────────────────────
   pi.on("model_select", async (event, ctx) => {
-    const newPack = packForModel(event.model);
+    const newPack = desiredPack(event.model);
     if (newPack !== currentPack) {
       currentPack = newPack;
       lastPlayed = {};
@@ -157,6 +268,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── Session start → greeting ───────────────────────────────────────────
   pi.on("session_start", async (_event, ctx) => {
+    applyWc3Settings(ctx.cwd);
     syncPackToModel(ctx);
     const line = playSound("greeting");
     if (line) {

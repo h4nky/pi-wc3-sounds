@@ -1,0 +1,47 @@
+{
+  "name": "claptrap",
+  "display_name": "Claptrap (Borderlands)",
+  "categories": {
+    "greeting": {
+      "sounds": [
+        { "file": "ClaptrapHey.wav", "line": "Hey!" },
+        { "file": "ClaptrapHeyThere.wav", "line": "Hey there!" },
+        { "file": "ClaptrapFollowMyVoice.wav", "line": "Follow my voice!" }
+      ]
+    },
+    "acknowledge": {
+      "sounds": [
+        { "file": "ClaptrapComeOnMinion.wav", "line": "Come on, minion!" },
+        { "file": "ClaptrapLetsGoThisWay.wav", "line": "Let's go this way!" },
+        { "file": "ClaptrapFollowMyVoice.wav", "line": "Follow my voice!" }
+      ]
+    },
+    "complete": {
+      "sounds": [
+        { "file": "ClaptrapGoodAsNew.wav", "line": "Good as new!" },
+        { "file": "ClaptrapDontWorryBaby.wav", "line": "Don't worry, baby." },
+        { "file": "ClaptrapHeyThere.wav", "line": "Hey there!" }
+      ]
+    },
+    "error": {
+      "sounds": [
+        { "file": "ClaptrapGoingToDie.wav", "line": "I'm going to die!" },
+        { "file": "ClaptrapCantSeeYou.wav", "line": "Can you see me? Because I can't see you." }
+      ]
+    },
+    "permission": {
+      "sounds": [
+        { "file": "ClaptrapHey.wav", "line": "Hey!" },
+        { "file": "ClaptrapHeyThere.wav", "line": "Hey there!" },
+        { "file": "ClaptrapFollowMyVoice.wav", "line": "Follow my voice!" }
+      ]
+    },
+    "annoyed": {
+      "sounds": [
+        { "file": "ClaptrapSoLonely.wav", "line": "So lonely..." },
+        { "file": "ClaptrapCantSeeYou.wav", "line": "Can you see me? Because I can't see you." },
+        { "file": "ClaptrapGoingToDie.wav", "line": "I'm going to die!" }
+      ]
+    }
+  }
+}

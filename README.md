@@ -1,8 +1,10 @@
 # WC3 Sounds — Pi Extension
 
-Warcraft III voice lines for [pi](https://github.com/badlogic/pi-mono) lifecycle events.
+Warcraft III (plus Claptrap) voice lines for [pi](https://github.com/badlogic/pi-mono) lifecycle events.
 
-Sounds sourced from [peon-ping](https://github.com/tonyyont/peon-ping) by [@tonyyont](https://github.com/tonyyont).
+Sound sources:
+- Warcraft III packs from [peon-ping](https://github.com/tonyyont/peon-ping) by [@tonyyont](https://github.com/tonyyont)
+- Claptrap clips from public soundboard sources (trimmed/converted for this extension)
 
 ## Install
 
@@ -16,6 +18,7 @@ pi install https://github.com/h4nky/pi-wc3-sounds
 |---|---|---|
 | Claude (Anthropic) | 🪓 Orc Peon | *"Work, work."*, *"Me not that kind of orc!"* |
 | Codex | 🏰 Human Peasant | *"Yes, milord?"*, *"Right-o."* |
+| OpenAI (non-Codex) | 🤖 Claptrap | *"Hey there!"*, *"Come on, minion!"* |
 | Any other model | 🪓 Orc Peon (default) | |
 
 Pack switches automatically when you change models.
@@ -38,9 +41,35 @@ Pack switches automatically when you change models.
 | `/wc3-volume [0.0–1.0]` | Set volume (e.g. `/wc3-volume 0.3`) |
 | `Ctrl+Shift+M` | Quick mute toggle |
 
+## Configuration
+
+Set extension config in your normal Pi settings file:
+
+- Global: `~/.pi/agent/settings.json`
+- Project: `.pi/settings.json`
+
+Use the `wc3Sounds` object:
+
+```json
+{
+  "wc3Sounds": {
+    "pack": "auto",
+    "volume": 0.5,
+    "muted": false
+  }
+}
+```
+
+- `pack`: `"auto" | "peon" | "peasant" | "claptrap"`
+- `auto` keeps model-based switching
+- Project settings override global settings
+
 ## Requirements
 
-macOS only (uses `afplay`). Silently no-ops on other platforms.
+- macOS: uses `afplay`
+- Linux: uses `pw-play` (PipeWire)
+
+If no supported player is available, it silently no-ops.
 
 ## License
 
