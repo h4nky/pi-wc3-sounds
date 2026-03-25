@@ -40,7 +40,10 @@ Pack switches automatically when you change models.
 
 ## Requirements
 
-macOS only (uses `afplay`). Silently no-ops on other platforms.
+- macOS: uses `afplay`
+- Linux: uses `pw-play` (PipeWire)
+
+If no supported player is available, it silently no-ops.
 
 ## License
 

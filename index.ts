@@ -19,13 +19,16 @@
  *   /wc3-mute      — Toggle mute
  *   /wc3-volume    — Set volume (0.0–1.0)
  *
- * macOS only (uses afplay). Falls back to no-op on other platforms.
+ * Supported playback:
+ *   macOS → afplay
+ *   Linux → pw-play (PipeWire)
+ *   Other platforms → no-op
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -42,10 +45,15 @@ interface PackManifest {
 
 type Category = "greeting" | "acknowledge" | "complete" | "error" | "permission" | "annoyed";
 
+interface PlayerConfig {
+  command: string;
+  argsForVolume: (volume: number) => string[];
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 const PACKS_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), "packs");
-const IS_MACOS = process.platform === "darwin";
+const PLAYER = resolvePlayer();
 
 let muted = false;
 let volume = 0.5;
@@ -84,6 +92,33 @@ function syncPackToModel(ctx: { model?: any }): void {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+function hasCommand(command: string): boolean {
+  try {
+    execFileSync("which", [command], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolvePlayer(): PlayerConfig | null {
+  if (process.platform === "darwin") {
+    return {
+      command: "afplay",
+      argsForVolume: (v) => ["-v", String(v)],
+    };
+  }
+
+  if (process.platform === "linux" && hasCommand("pw-play")) {
+    return {
+      command: "pw-play",
+      argsForVolume: (v) => ["--volume", String(v)],
+    };
+  }
+
+  return null;
+}
+
 function loadManifest(packName: string): PackManifest | null {
   const manifestPath = path.join(PACKS_DIR, packName, "manifest.json");
   try {
@@ -111,7 +146,7 @@ function pickSound(category: Category): { file: string; line: string } | null {
 }
 
 function playSound(category: Category): string | null {
-  if (muted || !IS_MACOS) return null;
+  if (muted || !PLAYER) return null;
 
   const sound = pickSound(category);
   if (!sound) return null;
@@ -119,7 +154,7 @@ function playSound(category: Category): string | null {
   const soundPath = path.join(PACKS_DIR, currentPack, "sounds", sound.file);
   if (!fs.existsSync(soundPath)) return null;
 
-  execFile("afplay", ["-v", String(volume), soundPath], (err) => {
+  execFile(PLAYER.command, [...PLAYER.argsForVolume(volume), soundPath], (err) => {
     if (err && (err as any).code !== "ERR_CHILD_PROCESS_STDIO_FINAL_ERROR") {
       // Silently ignore playback errors
     }
