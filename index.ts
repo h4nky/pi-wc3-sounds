@@ -28,6 +28,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 
@@ -45,6 +46,8 @@ interface PackManifest {
 }
 
 type Category = "greeting" | "acknowledge" | "complete" | "error" | "permission" | "annoyed";
+type PackName = "peon" | "peasant" | "claptrap";
+type PackMode = "auto" | PackName;
 
 interface PlayerConfig {
   command: string;
@@ -56,18 +59,72 @@ interface PlayerConfig {
 const PACKS_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), "packs");
 const PLAYER = resolvePlayer();
 
+interface Wc3Settings {
+  pack?: PackMode;
+  muted?: boolean;
+  volume?: number;
+}
+
 let muted = false;
 let volume = 0.5;
-let currentPack = "peon";
+let packMode: PackMode = "auto";
+let currentPack: PackName = "peon";
 let lastPlayed: Record<string, string> = {};
 let promptTimestamps: number[] = [];
 
 const ANNOYED_THRESHOLD = 3;
 const ANNOYED_WINDOW_MS = 10_000;
 
+// ── Settings ───────────────────────────────────────────────────────────────
+
+function isPackName(value: unknown): value is PackName {
+  return value === "peon" || value === "peasant" || value === "claptrap";
+}
+
+function readSettingsFile(filePath: string): Record<string, any> {
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function loadWc3Settings(cwd: string): Wc3Settings {
+  const globalSettingsPath = path.join(os.homedir(), ".pi", "agent", "settings.json");
+  const projectSettingsPath = path.join(cwd, ".pi", "settings.json");
+
+  const globalSettings = readSettingsFile(globalSettingsPath);
+  const projectSettings = readSettingsFile(projectSettingsPath);
+
+  const merged = {
+    ...(globalSettings?.wc3Sounds ?? {}),
+    ...(projectSettings?.wc3Sounds ?? {}),
+  } as Wc3Settings;
+
+  return merged;
+}
+
+function applyWc3Settings(cwd: string): void {
+  const settings = loadWc3Settings(cwd);
+
+  if (settings.pack === "auto" || isPackName(settings.pack)) {
+    packMode = settings.pack;
+  }
+
+  if (typeof settings.muted === "boolean") {
+    muted = settings.muted;
+  }
+
+  if (typeof settings.volume === "number" && settings.volume >= 0 && settings.volume <= 1) {
+    volume = settings.volume;
+  }
+}
+
 // ── Pack selection by model ────────────────────────────────────────────────
 
-function packForModel(model: { provider?: string; id?: string; name?: string } | undefined): string {
+function packForModel(model: { provider?: string; id?: string; name?: string } | undefined): PackName {
   if (!model) return "peon";
 
   const id = (model.id ?? "").toLowerCase();
@@ -94,8 +151,13 @@ function packForModel(model: { provider?: string; id?: string; name?: string } |
   return "peon";
 }
 
+function desiredPack(model: { provider?: string; id?: string; name?: string } | undefined): PackName {
+  if (packMode !== "auto") return packMode;
+  return packForModel(model);
+}
+
 function syncPackToModel(ctx: { model?: any }): void {
-  const newPack = packForModel(ctx.model);
+  const newPack = desiredPack(ctx.model);
   if (newPack !== currentPack) {
     currentPack = newPack;
     lastPlayed = {};
@@ -193,7 +255,7 @@ function packEmoji(): string {
 export default function (pi: ExtensionAPI) {
   // ── Model change → switch pack ─────────────────────────────────────────
   pi.on("model_select", async (event, ctx) => {
-    const newPack = packForModel(event.model);
+    const newPack = desiredPack(event.model);
     if (newPack !== currentPack) {
       currentPack = newPack;
       lastPlayed = {};
@@ -206,6 +268,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── Session start → greeting ───────────────────────────────────────────
   pi.on("session_start", async (_event, ctx) => {
+    applyWc3Settings(ctx.cwd);
     syncPackToModel(ctx);
     const line = playSound("greeting");
     if (line) {
